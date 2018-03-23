@@ -3,9 +3,6 @@ applications:
   instances: 1
   memory: 256M
   disk_quota: 256M
-  buildpack: binary_buildpack
-  path: bin
-  command: ./secure-credentials-broker
   #random-route: true
   env:
     SKIP_TLS_VALIDATION: true

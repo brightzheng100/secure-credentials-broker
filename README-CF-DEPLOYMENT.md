@@ -74,10 +74,10 @@ Now the BOSH Lite + Cloud Foundry env is ready!
 ```
 $ uaac target https://uaa.bosh-lite.com
 
-$ bosh int cf-deployment-vars.yml --path=/uaa_admin_client_secret
+$ bosh int ./creds.yml --path=/uaa_admin_client_secret
 <UUA ADMIN CLIENT SECRET SHOWS HERE>
 
-$ uaac token client get admin
+$ uaac token client get uaa_admin
 Client secret: <UUA ADMIN CLIENT SECRET>
 
 $ uaac client add secure-credentials-broker -i
@@ -104,6 +104,8 @@ $ uaac client add secure-credentials-broker -i
     lastmodified: 1520429360000
     id: secure-credentials-broker
 ```
+
+> Note: we're using BOSH Director's UAA and the admin in `cf-deployment` should be `uaa_admin`
 
 ## Build, Deploy and Try the Broker
 
@@ -150,9 +152,26 @@ $ cf bind-running-security-group secure-service-credentials
 
 5. Build, push, create broker
 
+Update `manifest.yml` with correct info, for example:
 ```
-$ mkdir bin
-$ GOOS=linux go build -o ./bin/secure-credentials-broker
+applications:
+- name: secure-credentials-broker
+  instances: 1
+  memory: 256M
+  disk_quota: 256M
+  #random-route: true
+  env:
+    SKIP_TLS_VALIDATION: true
+    CREDHUB_SERVER: https://credhub.service.cf.internal:8844
+    CREDHUB_CLIENT: secure-credentials-broker
+    CREDHUB_SECRET: my-secret
+    BROKER_AUTH_USERNAME: user
+    BROKER_AUTH_PASSWORD: password
+```
+
+> Note: the `BROKER_AUTH_USERNAME` and `BROKER_AUTH_PASSWORD` will be used in below command line.
+
+```
 $ cf push
 
 $ cf create-service-broker secure-credentials-broker user password https://secure-credentials-broker.bosh-lite.com

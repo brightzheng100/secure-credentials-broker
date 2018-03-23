@@ -4,11 +4,13 @@ import (
 	"net/http"
 	"os"
 
+	"github.com/cloudfoundry/secure-credentials-broker/broker"
+	"github.com/cloudfoundry/secure-credentials-broker/brokerconfig"
+
 	"code.cloudfoundry.org/lager"
 	"github.com/cloudfoundry-incubator/credhub-cli/credhub"
 	"github.com/cloudfoundry-incubator/credhub-cli/credhub/auth"
 	"github.com/cloudfoundry-incubator/credhub-cli/util"
-	"github.com/cloudfoundry/secure-credentials-broker/broker"
 	"github.com/pivotal-cf/brokerapi"
 )
 
@@ -16,44 +18,41 @@ func main() {
 	brokerLogger := lager.NewLogger("secure-credentials-broker")
 	brokerLogger.RegisterSink(lager.NewWriterSink(os.Stdout, lager.DEBUG))
 	brokerLogger.RegisterSink(lager.NewWriterSink(os.Stderr, lager.ERROR))
-	brokerLogger.Info("starting up the secure credentials broker...")
+	brokerLogger.Info("the secure credentials broker is starting up...")
 
-	credHubClient := authenticate()
+	config, err := brokerconfig.LoadAndValidateConfig()
+	if err != nil {
+		brokerLogger.Error("Broker is not configured correctly", err)
+		os.Exit(1)
+	}
+
+	credHubClient, err := authenticate(config)
+	if err != nil {
+		brokerLogger.Error("CredHub client is failed to create", err)
+		os.Exit(2)
+	}
+
 	serviceBroker := &broker.CredhubServiceBroker{CredHubClient: credHubClient, Logger: brokerLogger}
 
 	brokerCredentials := brokerapi.BrokerCredentials{
-		Username: "admin",
-		Password: "admin",
+		Username: config.BrokerConfiguration.Username,
+		Password: config.BrokerConfiguration.Password,
 	}
 
 	brokerAPI := brokerapi.New(serviceBroker, brokerLogger, brokerCredentials)
 
 	http.Handle("/", brokerAPI)
 
-	var port string
-	if port = os.Getenv("PORT"); len(port) == 0 {
-		port = "8080"
-	}
-
-	brokerLogger.Fatal("http-listen", http.ListenAndServe(":"+port, nil))
+	brokerLogger.Info("the secure credentials broker is up and listening on port: " + config.BrokerConfiguration.Port)
+	brokerLogger.Fatal("http-listen", http.ListenAndServe(":"+config.BrokerConfiguration.Port, nil))
 }
 
-func authenticate() *credhub.CredHub {
-
-	skipTLSValidation := false
-	if skipTLS := os.Getenv("SKIP_TLS_VALIDATION"); skipTLS == "true" {
-		skipTLSValidation = true
-	}
-
+func authenticate(config *brokerconfig.Config) (*credhub.CredHub, error) {
 	ch, err := credhub.New(
-		util.AddDefaultSchemeIfNecessary(os.Getenv("CREDHUB_SERVER")),
-		credhub.SkipTLSValidation(skipTLSValidation),
-		credhub.Auth(auth.UaaClientCredentials(os.Getenv("CREDHUB_CLIENT"), os.Getenv("CREDHUB_SECRET"))),
+		util.AddDefaultSchemeIfNecessary(config.CredHubConfiguration.ServerURL),
+		credhub.SkipTLSValidation(config.CredHubConfiguration.SkipTLSValidation),
+		credhub.Auth(auth.UaaClientCredentials(config.CredHubConfiguration.UAAClient, config.CredHubConfiguration.UAASecret)),
 	)
 
-	if err != nil {
-		panic("credhub client configured incorrectly: " + err.Error())
-	}
-
-	return ch
+	return ch, err
 }
